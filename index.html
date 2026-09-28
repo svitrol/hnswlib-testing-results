@@ -1,0 +1,45 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Outlier queries in HNSW indexes</title><link rel=stylesheet href='style.css'></head><body><h1>Outlier queries in HNSW indexes</h1><p>Experiments on why some queries of HNSW graph indexes need far more distance comparisons than the rest, or miss the true nearest neighbour, compared across three implementations: <b>hnswlib</b>, <b>nmslib</b> and <b>flatnav</b>.</p><h2>Datasets</h2><table><tr><th>dataset</th><th>distance</th><th>points</th><th>queries</th><th>dim</th><th>libraries</th><th>patience</th><th>wc</th></tr><tr><td><a href='kosarak-jaccard/index.html'>kosarak-jaccard</a></td><td>jaccard</td><td>74,962</td><td>500</td><td>41260</td><td>nmslib</td><td>patience = 300, threshold = 100</td><td></td></tr><tr><td><a href='movielens10m-jaccard/index.html'>movielens10m-jaccard</a></td><td>jaccard</td><td>69,363</td><td>500</td><td>65134</td><td>nmslib</td><td>patience = 300, threshold = 100</td><td></td></tr><tr><td><a href='fashion-mnist-784-euclidean/index.html'>fashion-mnist-784-euclidean</a></td><td>euclidean</td><td>60,000</td><td>10,000</td><td>784</td><td>hnswlib, nmslib, flatnav</td><td>patience = 150, threshold = 100</td><td>alpha = 1.05, min_degree_frac = 0.5</td></tr><tr><td><a href='mnist-784-euclidean/index.html'>mnist-784-euclidean</a></td><td>euclidean</td><td>60,000</td><td>10,000</td><td>784</td><td>hnswlib, nmslib, flatnav</td><td>patience = 150, threshold = 100</td><td>alpha = 1.05, min_degree_frac = 0.5</td></tr><tr><td><a href='glove-25-angular/index.html'>glove-25-angular</a></td><td>angular</td><td>1,183,514</td><td>10,000</td><td>25</td><td>hnswlib, nmslib, flatnav</td><td>patience = 500, threshold = 100</td><td>alpha = 1.05, min_degree_frac = 0.5</td></tr><tr><td><a href='glove-50-angular/index.html'>glove-50-angular</a></td><td>angular</td><td>1,183,514</td><td>10,000</td><td>50</td><td>hnswlib, nmslib, flatnav</td><td>patience = 500, threshold = 100</td><td>alpha = 1.02, min_degree_frac = 0.5</td></tr><tr><td><a href='nytimes-256-angular/index.html'>nytimes-256-angular</a></td><td>angular</td><td>290,000</td><td>10,000</td><td>256</td><td>hnswlib, nmslib, flatnav</td><td>patience = 500, threshold = 100</td><td>alpha = 1.02, min_degree_frac = 0.5</td></tr><tr><td><a href='coco-t2i-512-angular/index.html'>coco-t2i-512-angular</a></td><td>angular</td><td>113,287</td><td>10,000</td><td>512</td><td>hnswlib, nmslib, flatnav</td><td>patience = 500, threshold = 100</td><td>alpha = 1.01, min_degree_frac = 0.5</td></tr><tr><td><a href='lastfm-64-dot/index.html'>lastfm-64-dot</a></td><td>angular</td><td>292,385</td><td>50,000</td><td>65</td><td>hnswlib, nmslib, flatnav</td><td>patience = 500, threshold = 70</td><td>alpha = 1.01, min_degree_frac = 0.9</td></tr><tr><td><a href='yi-128-ip/index.html'>yi-128-ip</a> (<a href='yi-128-ip/connectivity.html'>connectivity</a>)</td><td>ip</td><td>187,843</td><td>1,000</td><td>128</td><td>hnswlib, nmslib, flatnav</td><td>patience = 500, threshold = 90</td><td>alpha = 1.35, min_degree_frac = 0.5</td></tr><tr><td><a href='llama-128-ip/index.html'>llama-128-ip</a></td><td>ip</td><td>256,921</td><td>1,000</td><td>128</td><td>hnswlib, nmslib, flatnav</td><td>patience = 200, threshold = 90</td><td>alpha = 1.01, min_degree_frac = 0.9</td></tr></table>
+<h2>What was done</h2>
+<h3>Data and indexes</h3>
+<p>Datasets come from <a href="https://github.com/erikbern/ann-benchmarks">ann-benchmarks</a> (HDF5 files with
+train points, test queries and exact ground truth). For every library I built indexes over the full grid
+M &isin; {4, 8, 12, 16, 24, 36, 48, 64, 96} &times; efConstruction &isin; {100, 150, 200, 250, 300, 350, 400, 450, 500}
+(81 indexes per library and dataset), and queried each with ef &isin; {10, 20, 40, 80, 120, 200, 400, 600, 800},
+k = 10. Metric mapping: hnswlib l2 / cosine / ip, nmslib l2 / cosinesimil / negdotprod / jaccard_sparse, flatnav
+l2 / inner product (normalized vectors for angular data, max. 2&middot;M edges per node). The jaccard datasets
+are supported only by nmslib. All libraries were compiled in the same Docker image.</p>
+<h3>What is measured per query</h3>
+<ul><li><b>comparisons</b>: the number of distance computations of the query (instrumented in all three
+libraries; flatnav includes its 100 initialization samples).</li>
+<li><b>recall@1</b>: a returned point is at least as close as the true nearest neighbour (robust to ties).
+A query that fails this is a <b>miss</b>.</li></ul>
+<h3>Variants</h3>
+<ul><li><b>baseline</b>: the unmodified search.</li>
+<li><b>patience</b>: early exit after <i>Patience in Proximity</i>,
+implemented identically in all three libraries. After each hop, the share of the current top-k that did not change
+is computed; the search stops after <i>patience</i> consecutive hops with that share &ge; <i>threshold</i> %
+(counted only once the top-k is full).</li>
+<li><b>wc</b> (hnswlib only): the well-connected search. When the search would stop in a local minimum, it
+continues through a candidate that is at most (alpha &minus; 1)&middot;|bound| worse, provided the candidate's
+level-0 degree is at least a given fraction of 2&middot;M.</li></ul>
+<p>Patience and wc parameters were tuned on the smallest hnswlib index (M = 4, efC = 100; nmslib for the jaccard
+datasets) over patience &isin; 1&ndash;500 &times; threshold &isin; {70, 80, 90, 100} and alpha &isin; 1.01&ndash;1.5
+&times; min degree &isin; {0.5, 0.75, 0.9, 1.0}, then used for every index of the dataset. The selected values are
+in the table above.</p>
+<h3>Outliers</h3>
+<p>Two kinds, analysed separately: <b>comparison outliers</b>, queries above the Tukey fence
+Q3 + 1.5&middot;IQR of comparisons within one configuration (library, M, efC, ef, variant), and <b>misses</b>.
+For each configuration it checks which outlier queries all three libraries share and which each pair shares,
+against the overlap expected if they were independent.</p>
+<h3>Why hnswlib misses</h3>
+<p>The saved hnswlib graphs are parsed directly. For every query, the true neighbour <i>t</i> and the returned
+point <i>r</i> are located in the level-0 graph: BFS from the entry point (reachability) and hop distances to
+well-connected nodes (top 1 % in-degree, full neighbour lists, nodes on upper levels). Each node's accessibility
+flags (evaluate_accessibility) are also computed. Every miss gets one reason (see the dataset pages).</p>
+<h3>PCA</h3>
+<p>A 2000-point sample of the dataset and all queries, standardized and projected on the first two principal
+components (item sets of the jaccard datasets as binary vectors, centred only). Each query is coloured by the share
+of configurations in which it was an outlier.</p>
+<p class=note>Every plot opens at full size when clicked. Configurations: 9 M &times;
+9 efC &times; 9 ef = 729
+per library and variant.</p></body></html>
